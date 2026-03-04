@@ -20,7 +20,8 @@ LY = 200
 
 # Physics
 GRAVITY = 1400.0
-JUMP_SPEED = 550.0
+JUMP_SPEED = 560.0
+LAND_SNAP = 8
 
 # Allowed letters
 LETTERS = [chr(c) for c in range(ord("a"), ord("z") + 1)]
@@ -36,8 +37,7 @@ class Player(pygame.sprite.Sprite):
         self.pos_y = float(self.rect.y)
         self.vy = 0.0
 
-    def yupdate(self, y):
-        self.pos_y = y
+    def sync_rect(self):
         self.rect.y = int(self.pos_y)
 
 
@@ -74,8 +74,6 @@ def next_block(player):
 
 
 def main():
-    global State
-
     pygame.init()
     screen = pygame.display.set_mode((IX, IY), 0, 32)
     pygame.display.set_caption("Key Jump")
@@ -101,7 +99,6 @@ def main():
                     if isinstance(v, Player):
                         v.pos_y = float(v.rect.y)
                     if isinstance(v, Block):
-                        # Keep block aligned with its rect
                         v.pos_x = float(v.rect.x)
                 screen.fill((255, 255, 255))
                 all_sprites.draw(screen)
@@ -124,15 +121,15 @@ def main():
         prev_bottom = player.rect.bottom
         player.vy += GRAVITY * dt
         player.pos_y += player.vy * dt
-        player.rect.y = int(player.pos_y)
+        player.sync_rect()
 
         # Move block
         now_block.move(dt)
 
         # Collision checks
         if pygame.sprite.collide_rect(player, now_block):
-            # Landing from above
-            if player.vy >= 0 and prev_bottom <= now_block.rect.top + 5:
+            landing = player.vy >= 0 and prev_bottom <= now_block.rect.top + LAND_SNAP
+            if landing:
                 player.rect.bottom = now_block.rect.top
                 player.pos_y = float(player.rect.y)
                 player.vy = 0.0
