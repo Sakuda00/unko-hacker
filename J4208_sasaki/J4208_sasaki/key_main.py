@@ -2,7 +2,6 @@
 import pygame
 from pygame.locals import QUIT, KEYDOWN
 import random
-import time
 
 # Screen size
 IX = 500
@@ -19,9 +18,9 @@ OBY = 90
 # Scroll threshold
 LY = 200
 
-# Jump physics
-V0 = 50
-G = 9.8
+# Physics
+GRAVITY = 1400.0
+JUMP_SPEED = 550.0
 
 # Allowed letters
 LETTERS = [chr(c) for c in range(ord("a"), ord("z") + 1)]
@@ -34,9 +33,12 @@ class Player(pygame.sprite.Sprite):
         self.image.fill((255, 200, 0))
         self.rect = self.image.get_rect()
         self.rect.topleft = (x, y)
+        self.pos_y = float(self.rect.y)
+        self.vy = 0.0
 
     def yupdate(self, y):
-        self.rect.y = y
+        self.pos_y = y
+        self.rect.y = int(self.pos_y)
 
 
 class Block(pygame.sprite.Sprite):
@@ -47,15 +49,17 @@ class Block(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.topleft = (x, y)
         self.letter = letter
-        self.vx = vx
+        self.vx = float(vx)
+        self.pos_x = float(self.rect.x)
 
-    def move(self):
-        self.rect.x -= self.vx
+    def move(self, dt):
+        self.pos_x -= self.vx * dt
+        self.rect.x = int(self.pos_x)
 
 
 class GameState:
     def __init__(self):
-        self.jumping = False
+        self.can_jump = True
 
 
 State = GameState()
@@ -65,7 +69,7 @@ def next_block(player):
     rightx = IX
     righty = player.rect.bottomright[1] - OBY
     letter = random.choice(LETTERS)
-    vx = random.randint(2, 7)
+    vx = random.randint(2, 7) * 60
     return Block(rightx, righty, letter, vx)
 
 
@@ -84,21 +88,24 @@ def main():
     all_sprites = pygame.sprite.Group()
     all_sprites.add(player, now_block)
 
-    jumping = False
-    st = -1
-    sth = -1
     reloading = False
     score = 0
 
     while True:
+        dt = clock.tick(60) / 1000.0
+
         if reloading:
             if player.rect.y < LY:
                 for v in all_sprites:
                     v.rect.y += 7
+                    if isinstance(v, Player):
+                        v.pos_y = float(v.rect.y)
+                    if isinstance(v, Block):
+                        # Keep block aligned with its rect
+                        v.pos_x = float(v.rect.x)
                 screen.fill((255, 255, 255))
                 all_sprites.draw(screen)
                 pygame.display.update()
-                clock.tick(60)
                 continue
             else:
                 reloading = False
@@ -107,34 +114,35 @@ def main():
             if event.type == QUIT:
                 return
             if event.type == KEYDOWN:
-                if not jumping:
+                if State.can_jump:
                     pressed = event.unicode.lower()
                     if pressed == now_block.letter:
-                        jumping = True
-                        st = time.time()
-                        sth = player.rect.y
+                        State.can_jump = False
+                        player.vy = -JUMP_SPEED
 
-        if jumping:
-            t = (time.time() - st) * 10
-            dh = (V0 * t) - (G * t * t * 0.5)
-            if dh < 0:
-                jumping = False
-            else:
-                nh = sth - dh
-                player.yupdate(nh)
+        # Physics update
+        prev_bottom = player.rect.bottom
+        player.vy += GRAVITY * dt
+        player.pos_y += player.vy * dt
+        player.rect.y = int(player.pos_y)
 
         # Move block
-        now_block.move()
+        now_block.move(dt)
 
         # Collision checks
         if pygame.sprite.collide_rect(player, now_block):
             # Landing from above
-            if abs(player.rect.bottomright[1] - now_block.rect.topright[1]) <= 10:
-                player.rect.y = now_block.rect.topleft[1] - PY
+            if player.vy >= 0 and prev_bottom <= now_block.rect.top + 5:
+                player.rect.bottom = now_block.rect.top
+                player.pos_y = float(player.rect.y)
+                player.vy = 0.0
+                State.can_jump = True
+
                 score += 100
                 now_block.kill()
                 now_block = next_block(player)
                 all_sprites.add(now_block)
+
                 if player.rect.y < LY:
                     reloading = True
             else:
@@ -143,6 +151,11 @@ def main():
 
         # Missed landing (block passed player)
         if now_block.rect.right < player.rect.left:
+            print("Game Over")
+            return
+
+        # Fell off screen
+        if player.rect.top > IY:
             print("Game Over")
             return
 
@@ -159,7 +172,6 @@ def main():
         screen.blit(score_surface, (10, 10))
 
         pygame.display.update()
-        clock.tick(60)
 
 
 if __name__ == "__main__":
